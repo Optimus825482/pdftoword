@@ -4,6 +4,8 @@ import uuid
 import shutil
 import logging
 import tempfile
+import struct
+import zlib
 from datetime import datetime
 from flask import (
     Flask,
@@ -64,6 +66,35 @@ def is_allowed_pdf(filename: str, mimetype: str | None) -> bool:
     if not mimetype:
         return True
     return mimetype in {"application/pdf", "application/x-pdf"}
+
+
+def _png_chunk(chunk_type: bytes, data: bytes) -> bytes:
+    length = struct.pack("!I", len(data))
+    crc = struct.pack("!I", zlib.crc32(chunk_type + data) & 0xFFFFFFFF)
+    return length + chunk_type + data + crc
+
+
+def generate_solid_png(size: int, rgb: tuple[int, int, int]) -> bytes:
+    signature = b"\x89PNG\r\n\x1a\n"
+    width = size
+    height = size
+
+    ihdr = struct.pack("!IIBBBBB", width, height, 8, 2, 0, 0, 0)
+
+    row = bytes([rgb[0], rgb[1], rgb[2]]) * width
+    raw = b"".join(b"\x00" + row for _ in range(height))
+    compressed = zlib.compress(raw, level=9)
+
+    return (
+        signature
+        + _png_chunk(b"IHDR", ihdr)
+        + _png_chunk(b"IDAT", compressed)
+        + _png_chunk(b"IEND", b"")
+    )
+
+
+PWA_ICON_192 = generate_solid_png(192, (11, 18, 48))
+PWA_ICON_512 = generate_solid_png(512, (11, 18, 48))
 
 
 SERVICE_WORKER_JS = f"""
@@ -388,6 +419,28 @@ HTML_TEMPLATE = """
         let deferredPrompt = null;
         let isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 
+        function getInstallHelpMessage() {
+            const ua = navigator.userAgent || '';
+            const isIOS = /iPhone|iPad|iPod/i.test(ua);
+            const isAndroid = /Android/i.test(ua);
+            const isEdgeOrChromeDesktop = /Edg|Chrome/i.test(ua) && !isAndroid;
+
+            if (!window.isSecureContext) {
+                return 'PWA kurulumu için site HTTPS üzerinde açılmalıdır.';
+            }
+
+            if (isIOS) {
+                return 'iPhone/iPad için Safari menüsünden Paylaş → Ana Ekrana Ekle yolunu kullanın.';
+            }
+            if (isAndroid) {
+                return 'Android için tarayıcı menüsünden “Uygulamayı yükle” veya “Ana ekrana ekle” seçin.';
+            }
+            if (isEdgeOrChromeDesktop) {
+                return 'Adres çubuğundaki yükle simgesini (install) kullanarak uygulamayı kurabilirsiniz.';
+            }
+            return 'Bu tarayıcı otomatik yükleme penceresi göstermeyebilir. Tarayıcı menüsünden “Uygulamayı yükle/Ana ekrana ekle” seçeneğini kullanın.';
+        }
+
         function syncInstallButtonState() {
             if (isStandalone) {
                 installBtn.textContent = 'Uygulama Yüklü';
@@ -555,7 +608,7 @@ HTML_TEMPLATE = """
             }
 
             if (!deferredPrompt) {
-                status.textContent = 'Tarayıcı yükleme penceresi sunmuyor. Menüden “Ana ekrana ekle” seçeneğini kullanabilirsiniz.';
+                status.textContent = getInstallHelpMessage();
                 return;
             }
 
@@ -608,11 +661,23 @@ def web_manifest():
         "lang": "tr",
         "icons": [
             {
+                "src": "/pwa-icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any maskable",
+            },
+            {
+                "src": "/pwa-icon-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any maskable",
+            },
+            {
                 "src": "/pwa-icon.svg",
                 "sizes": "any",
                 "type": "image/svg+xml",
                 "purpose": "any maskable",
-            }
+            },
         ],
     }
     response = jsonify(manifest_payload)
@@ -631,6 +696,16 @@ def service_worker():
 @app.route("/pwa-icon.svg")
 def pwa_icon():
     return Response(PWA_ICON_SVG, mimetype="image/svg+xml")
+
+
+@app.route("/pwa-icon-192.png")
+def pwa_icon_192():
+    return Response(PWA_ICON_192, mimetype="image/png")
+
+
+@app.route("/pwa-icon-512.png")
+def pwa_icon_512():
+    return Response(PWA_ICON_512, mimetype="image/png")
 
 
 @app.route("/favicon.ico")
