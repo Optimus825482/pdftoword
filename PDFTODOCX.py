@@ -258,6 +258,7 @@ HTML_TEMPLATE = """
         .primary-btn {
             background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
             box-shadow: 0 10px 30px rgba(84, 118, 255, 0.35);
+            color: #071326;
         }
         .primary-btn:hover {
             filter: brightness(1.05);
@@ -265,6 +266,7 @@ HTML_TEMPLATE = """
         }
         .download-btn {
             background: linear-gradient(135deg, var(--accent-3), var(--accent-2));
+            color: #071326;
         }
         .install-btn {
             border: 1px solid rgba(137, 178, 255, .45);
@@ -331,11 +333,11 @@ HTML_TEMPLATE = """
                 </label>
 
                 <div class="flex flex-col sm:flex-row gap-3">
-                    <button id="convertBtn" type="submit" class="primary-btn transition-all duration-200 flex-1 text-white font-semibold py-3 rounded-xl">
+                    <button id="convertBtn" type="submit" class="primary-btn transition-all duration-200 flex-1 font-semibold py-3 rounded-xl">
                         Convert to DOCX
                     </button>
-                    <button id="installBtn" type="button" class="install-btn hidden text-white font-medium py-3 px-5 rounded-xl">
-                        Uygulamayı Yükle
+                    <button id="installBtn" type="button" class="install-btn text-white font-medium py-3 px-5 rounded-xl">
+                        Uygulama Olarak Yükle
                     </button>
                 </div>
             </form>
@@ -346,13 +348,18 @@ HTML_TEMPLATE = """
 
             <p id="status" class="mt-3 text-sm text-indigo-100/80" aria-live="polite"></p>
 
-            <a id="downloadBtn" class="download-btn mt-4 hidden w-full md:w-auto justify-center inline-flex items-center px-5 py-3 text-white font-semibold rounded-xl shadow-md" href="#" target="_blank" download>
+            <a id="downloadBtn" class="download-btn mt-4 hidden w-full md:w-auto justify-center inline-flex items-center px-5 py-3 font-semibold rounded-xl shadow-md" href="#" target="_blank" download>
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" class="mr-2">
                     <path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>
                 </svg>
                 DOCX Dosyasını İndir
             </a>
         </section>
+
+        <footer class="mt-8 pt-5 border-t border-indigo-200/20 text-center space-y-1">
+            <p class="text-xs text-indigo-100/90">© 2026 Code by Erkan Erdem</p>
+            <p class="text-xs text-indigo-100/80">Kullanım tamamen ücretsizdir ve ücretsiz kalacaktır.</p>
+        </footer>
     </main>
 
     <script>
@@ -379,6 +386,15 @@ HTML_TEMPLATE = """
         const networkState = document.getElementById('networkState');
 
         let deferredPrompt = null;
+        let isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+        function syncInstallButtonState() {
+            if (isStandalone) {
+                installBtn.textContent = 'Uygulama Yüklü';
+                installBtn.disabled = true;
+                installBtn.classList.add('opacity-60', 'cursor-not-allowed');
+            }
+        }
 
         function updateNetworkBadge() {
             if (navigator.onLine) {
@@ -525,19 +541,32 @@ HTML_TEMPLATE = """
         window.addEventListener('beforeinstallprompt', (event) => {
             event.preventDefault();
             deferredPrompt = event;
-            installBtn.classList.remove('hidden');
+            if (!isStandalone) {
+                installBtn.textContent = 'Uygulama Olarak Yükle';
+                installBtn.disabled = false;
+                installBtn.classList.remove('opacity-60', 'cursor-not-allowed');
+            }
         });
 
         installBtn.addEventListener('click', async () => {
-            if (!deferredPrompt) return;
+            if (isStandalone) {
+                status.textContent = 'Uygulama zaten yüklü.';
+                return;
+            }
+
+            if (!deferredPrompt) {
+                status.textContent = 'Tarayıcı yükleme penceresi sunmuyor. Menüden “Ana ekrana ekle” seçeneğini kullanabilirsiniz.';
+                return;
+            }
+
             deferredPrompt.prompt();
             await deferredPrompt.userChoice;
             deferredPrompt = null;
-            installBtn.classList.add('hidden');
         });
 
         window.addEventListener('appinstalled', () => {
-            installBtn.classList.add('hidden');
+            isStandalone = true;
+            syncInstallButtonState();
             status.textContent = 'NebulaDOC X cihazınıza yüklendi.';
         });
 
@@ -552,6 +581,7 @@ HTML_TEMPLATE = """
         window.addEventListener('online', updateNetworkBadge);
         window.addEventListener('offline', updateNetworkBadge);
         updateNetworkBadge();
+        syncInstallButtonState();
     </script>
 </body>
 </html>
