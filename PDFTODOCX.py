@@ -6,6 +6,7 @@ import logging
 import tempfile
 import struct
 import zlib
+import threading
 from datetime import datetime
 from flask import (
     Flask,
@@ -30,6 +31,7 @@ APP_VERSION = "1.1.0"
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 TEMP_DIR = os.path.join(BASE_DIR, "tmp")
+COUNTER_FILE = os.path.join(BASE_DIR, "conversion_count.txt")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(TEMP_DIR, exist_ok=True)
 
@@ -37,6 +39,29 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s"
 )
 logger = logging.getLogger("nebuladocx")
+counter_lock = threading.Lock()
+
+
+def _read_conversion_count_unlocked() -> int:
+    try:
+        with open(COUNTER_FILE, "r", encoding="utf-8") as file:
+            raw_value = file.read().strip()
+            return int(raw_value) if raw_value else 0
+    except (FileNotFoundError, ValueError, OSError):
+        return 0
+
+
+def get_conversion_count() -> int:
+    with counter_lock:
+        return _read_conversion_count_unlocked()
+
+
+def increment_conversion_count() -> int:
+    with counter_lock:
+        new_count = _read_conversion_count_unlocked() + 1
+        with open(COUNTER_FILE, "w", encoding="utf-8") as file:
+            file.write(str(new_count))
+        return new_count
 
 
 def sanitize_name(name: str) -> str:
@@ -431,6 +456,7 @@ HTML_TEMPLATE = """
         <footer class="mt-8 pt-5 border-t border-indigo-200/20 text-center space-y-1">
             <p class="text-xs text-indigo-100/90">© 2026 Code by Erkan Erdem</p>
             <p class="text-xs text-indigo-100/80">Kullanım tamamen ücretsizdir ve ücretsiz kalacaktır.</p>
+            <p class="text-xs text-indigo-100/80">Bugüne kadar başarıyla çevrilen dosya: <span id="conversionCounter" class="font-semibold text-cyan-200">{{ conversion_count }}</span></p>
         </footer>
     </main>
 
@@ -457,6 +483,7 @@ HTML_TEMPLATE = """
         const convertBtn = document.getElementById('convertBtn');
         const installBtn = document.getElementById('installBtn');
         const networkState = document.getElementById('networkState');
+        const conversionCounter = document.getElementById('conversionCounter');
 
         let deferredPrompt = null;
         let isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
@@ -618,6 +645,12 @@ HTML_TEMPLATE = """
                     downloadBtn.setAttribute('aria-disabled', 'false');
                     downloadBtn.classList.remove('opacity-45', 'pointer-events-none');
                     status.textContent = 'Dönüştürme tamamlandı. Dosyanız hazır.';
+                    if (conversionCounter) {
+                        const current = Number.parseInt(conversionCounter.textContent || '0', 10);
+                        if (!Number.isNaN(current)) {
+                            conversionCounter.textContent = String(current + 1);
+                        }
+                    }
                 } else {
                     const errMsg = await readErrorFromBlob(this.response);
                     status.textContent = 'Hata: ' + errMsg;
@@ -691,7 +724,10 @@ HTML_TEMPLATE = """
 
 @app.route("/")
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    return render_template_string(
+        HTML_TEMPLATE,
+        conversion_count=get_conversion_count(),
+    )
 
 
 @app.route("/manifest.webmanifest")
@@ -834,6 +870,8 @@ def convert():
 
         shutil.move(temp_docx_path, final_path)
         temp_docx_path = ""
+
+        increment_conversion_count()
 
         response = send_file(
             final_path, as_attachment=True, download_name=output_name, max_age=0
