@@ -6,7 +6,7 @@
 - Runtime: Python 3.12
 - Production server: Waitress
 - PWA: `manifest.webmanifest` + `service-worker.js` + install prompt
-- Container deploy: Dockerfile (Coolify ile uyumlu)
+- Container deploy: Dockerfile + `docker-compose.yml` + Caddy reverse proxy
 - GitHub repository: https://github.com/Optimus825482/pdftoword
 
 ## 1) Kurulum
@@ -69,6 +69,54 @@ git push -u origin main
 5. Healthcheck path: `/healthz`
 6. Deploy branch: `main`
 7. Deploy başlat ve logları kontrol et.
+
+## 6.1) Docker Compose ile Domain Deploy (`pdf.erkanerdem.net`)
+
+Bu proje artık Caddy reverse proxy ile `docker-compose.yml` üzerinden doğrudan domaine yayın yapar.
+
+### Sunucu Hazırlığı
+
+- DNS A kaydı: `pdf.erkanerdem.net` → sunucu public IP
+- Sunucuda `80` ve `443` portları açık olmalı
+- Docker + Docker Compose kurulu olmalı
+
+### Çalıştırma
+
+```bash
+cp .env.example .env
+# gerekirse EMAIL değerini düzenle
+docker compose up -d --build
+```
+
+### Kontrol
+
+```bash
+docker compose ps
+docker compose logs -f caddy
+docker compose logs -f app
+```
+
+Domain üzerinden healthcheck:
+
+```bash
+curl -fsSL https://pdf.erkanerdem.net/healthz
+```
+
+> Caddy otomatik olarak Let's Encrypt TLS sertifikasını alır/yeniler.
+
+## 6.2) Coolify'da Compose Kullanımı
+
+Coolify tarafında istersen Dockerfile yerine Compose ile deploy edebilirsin:
+
+1. New Resource → Application → Public Repository
+2. Repo: `https://github.com/Optimus825482/pdftoword`
+3. Deployment Type: **Docker Compose**
+4. Compose file: `docker-compose.coolify.yml`
+5. Coolify Domain ayarına: `https://pdf.erkanerdem.net` gir
+6. Port: `5000`, Healthcheck: `/healthz`
+7. Deploy ve sağlık kontrolünü `https://pdf.erkanerdem.net/healthz` ile doğrula
+
+> Not: Coolify kendi proxy/TLS katmanını yönettiği için burada Caddy içeren `docker-compose.yml` yerine `docker-compose.coolify.yml` kullanılır.
 
 ## 7) PWA Doğrulama Checklist
 
