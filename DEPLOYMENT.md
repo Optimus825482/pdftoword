@@ -7,6 +7,7 @@
 - Production server: Waitress
 - PWA: `manifest.webmanifest` + `service-worker.js` + install prompt
 - Container deploy: Dockerfile (Coolify ile uyumlu)
+- GitHub repository: https://github.com/Optimus825482/pdftoword
 
 ## 1) Kurulum
 
