@@ -313,6 +313,42 @@ HTML_TEMPLATE = """
             background: rgba(255, 209, 102, 0.12);
             color: #ffe9bc;
         }
+        .wait-wrap {
+            display: none;
+            align-items: center;
+            gap: .55rem;
+            margin-top: .65rem;
+            color: #d9e7ff;
+            font-size: .9rem;
+        }
+        .wait-wrap.show {
+            display: inline-flex;
+        }
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border-radius: 999px;
+            border: 2px solid rgba(157, 191, 255, .35);
+            border-top-color: #8fd8ff;
+            animation: spin .75s linear infinite;
+        }
+        .dots::after {
+            content: '';
+            display: inline-block;
+            width: 1.2em;
+            text-align: left;
+            animation: dots 1.2s steps(4, end) infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        @keyframes dots {
+            0% { content: ''; }
+            25% { content: '.'; }
+            50% { content: '..'; }
+            75% { content: '...'; }
+            100% { content: ''; }
+        }
     </style>
 </head>
 <body class="overflow-x-hidden relative px-4 py-8 md:py-10">
@@ -379,12 +415,17 @@ HTML_TEMPLATE = """
 
             <p id="status" class="mt-3 text-sm text-indigo-100/80" aria-live="polite"></p>
 
-            <a id="downloadBtn" class="download-btn mt-4 hidden w-full md:w-auto justify-center inline-flex items-center px-5 py-3 font-semibold rounded-xl shadow-md" href="#" target="_blank" download>
+            <a id="downloadBtn" aria-disabled="true" class="download-btn mt-4 opacity-45 pointer-events-none w-full md:w-auto justify-center inline-flex items-center px-5 py-3 font-semibold rounded-xl shadow-md" href="#" target="_blank" download>
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" class="mr-2">
                     <path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>
                 </svg>
                 DOCX Dosyasını İndir
             </a>
+
+            <div id="waitingWrap" class="wait-wrap" aria-live="polite">
+                <span class="spinner" aria-hidden="true"></span>
+                <span class="dots">Lütfen bekleyin</span>
+            </div>
         </section>
 
         <footer class="mt-8 pt-5 border-t border-indigo-200/20 text-center space-y-1">
@@ -409,6 +450,7 @@ HTML_TEMPLATE = """
         const progressContainer = document.getElementById('progressContainer');
         const progressBar = document.getElementById('progressBar');
         const downloadBtn = document.getElementById('downloadBtn');
+        const waitingWrap = document.getElementById('waitingWrap');
         const fileInput = document.getElementById('pdfFile');
         const dropZone = document.getElementById('dropZone');
         const fileHint = document.getElementById('fileHint');
@@ -528,13 +570,16 @@ HTML_TEMPLATE = """
             }
 
             status.textContent = '';
-            downloadBtn.classList.add('hidden');
+            waitingWrap.classList.add('show');
+            downloadBtn.setAttribute('aria-disabled', 'true');
+            downloadBtn.classList.add('opacity-45', 'pointer-events-none');
             progressBar.style.width = '0%';
             progressBar.textContent = '0%';
             progressContainer.classList.remove('hidden');
             progressContainer.setAttribute('aria-valuenow', '0');
             convertBtn.disabled = true;
             convertBtn.classList.add('opacity-70', 'cursor-not-allowed');
+            status.textContent = 'Dosya dönüştürülüyor...';
 
             const formData = new FormData(form);
             const xhr = new XMLHttpRequest();
@@ -570,12 +615,14 @@ HTML_TEMPLATE = """
                     const url = window.URL.createObjectURL(blob);
                     downloadBtn.href = url;
                     downloadBtn.download = filename;
-                    downloadBtn.classList.remove('hidden');
+                    downloadBtn.setAttribute('aria-disabled', 'false');
+                    downloadBtn.classList.remove('opacity-45', 'pointer-events-none');
                     status.textContent = 'Dönüştürme tamamlandı. Dosyanız hazır.';
                 } else {
                     const errMsg = await readErrorFromBlob(this.response);
                     status.textContent = 'Hata: ' + errMsg;
                 }
+                waitingWrap.classList.remove('show');
                 progressContainer.classList.add('hidden');
                 convertBtn.disabled = false;
                 convertBtn.classList.remove('opacity-70', 'cursor-not-allowed');
@@ -583,6 +630,7 @@ HTML_TEMPLATE = """
 
             xhr.onerror = function () {
                 status.textContent = 'Ağ hatası oluştu. Tekrar deneyin.';
+                waitingWrap.classList.remove('show');
                 progressContainer.classList.add('hidden');
                 convertBtn.disabled = false;
                 convertBtn.classList.remove('opacity-70', 'cursor-not-allowed');
